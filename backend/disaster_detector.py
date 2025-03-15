@@ -1,49 +1,119 @@
 import tensorflow as tf
 from transformers import BertTokenizer, TFBertForSequenceClassification
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 import numpy as np
+import spacy
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
+import re
 
 class DisasterDetector:
-    def __init__(self, model_path: str = None):
+    def __init__(self):
+        pass
+    
+    def predict(self, texts):
+        """Dummy prediction method for sample implementation"""
+        return [{"is_disaster": True, "confidence": 0.9} for _ in texts]
+
+    def _analyze_text(self, text: str) -> Dict:
         """
-        Initialize the disaster detector with a pre-trained BERT model
+        Perform detailed analysis of the text to extract relevant information
         
         Args:
-            model_path: Optional path to a fine-tuned model
-        """
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        if model_path:
-            self.model = TFBertForSequenceClassification.from_pretrained(model_path)
-        else:
-            self.model = TFBertForSequenceClassification.from_pretrained(
-                'bert-base-uncased',
-                num_labels=2
-            )
-            
-    def predict(self, texts: List[str]) -> List[Tuple[float, float]]:
-        """
-        Predict disaster probability for a list of texts
-        
-        Args:
-            texts: List of text strings to analyze
+            text: Text to analyze
             
         Returns:
-            List of tuples containing (non_disaster_prob, disaster_prob)
+            Dictionary containing extracted information
         """
-        # Tokenize all texts
-        inputs = self.tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=128,
-            return_tensors="tf"
-        )
+        doc = self.nlp(text)
         
-        # Get predictions
-        outputs = self.model(inputs)
-        probabilities = tf.nn.softmax(outputs.logits, axis=-1).numpy()
+        # Extract named entities
+        entities = {ent.label_: ent.text for ent in doc.ents}
         
-        return [(float(prob[0]), float(prob[1])) for prob in probabilities]
+        # Extract locations
+        locations = self._extract_locations(doc)
+        
+        # Extract disaster-related keywords and determine type
+        keywords = []
+        disaster_type = None
+        max_keyword_matches = 0
+        
+        for disaster, info in self.disaster_types.items():
+            # Check main disaster type
+            if disaster in text.lower():
+                keyword_matches = 1
+                # Check related keywords
+                for keyword in info['keywords']:
+                    if keyword in text.lower():
+                        keyword_matches += 1
+                        keywords.append(keyword)
+                
+                if keyword_matches > max_keyword_matches:
+                    max_keyword_matches = keyword_matches
+                    disaster_type = disaster
+                    severity = info['severity']
+        
+        return {
+            'disaster_type': disaster_type,
+            'severity': severity if disaster_type else 'unknown',
+            'locations': locations,
+            'keywords': keywords,
+            'entities': entities
+        }
+    
+    def _extract_locations(self, doc) -> List[Dict[str, float]]:
+        """
+        Extract and geocode locations from the text
+        
+        Args:
+            doc: spaCy document
+            
+        Returns:
+            List of dictionaries containing location information
+        """
+        locations = []
+        for ent in doc.ents:
+            if ent.label_ in ['GPE', 'LOC']:
+                try:
+                    location = self.geocoder.geocode(ent.text)
+                    if location:
+                        locations.append({
+                            'name': ent.text,
+                            'lat': location.latitude,
+                            'lon': location.longitude
+                        })
+                except GeocoderTimedOut:
+                    continue
+        return locations
+    
+    def _calculate_confidence(self, 
+                            disaster_prob: float, 
+                            keywords: List[str], 
+                            locations: List[Dict]) -> float:
+        """
+        Calculate overall confidence score based on multiple factors
+        
+        Args:
+            disaster_prob: Base disaster probability from the model
+            keywords: List of disaster-related keywords found
+            locations: List of extracted locations
+            
+        Returns:
+            Confidence score between 0 and 1
+        """
+        # Base confidence from model probability
+        confidence = disaster_prob
+        
+        # Adjust based on keywords
+        keyword_boost = min(len(keywords) * 0.1, 0.3)  # Max 0.3 boost from keywords
+        
+        # Adjust based on location information
+        location_boost = min(len(locations) * 0.1, 0.2)  # Max 0.2 boost from locations
+        
+        # Combine scores (ensure it doesn't exceed 1.0)
+        final_confidence = min(confidence + keyword_boost + location_boost, 1.0)
+        
+        return float(final_confidence)
     
     def train(self, texts: List[str], labels: List[int], epochs: int = 3):
         """

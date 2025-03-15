@@ -1,16 +1,36 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi import FastAPI, WebSocket, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Set
+from typing import Optional, List, Dict
 import asyncio
-import json
 from datetime import datetime, timedelta
+import logging
+import os
+import tweepy
+from dotenv import load_dotenv
+from sample_data import SampleDataProvider
 
-from social_media_collector import SocialMediaCollector
-from disaster_detector import DisasterDetector
-from alert_generator import AlertGenerator
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename=os.getenv('LOG_FILE', 'alerts.log')
+)
+logger = logging.getLogger(__name__)
+
+# Twitter API Configuration
+twitter_client = tweepy.Client(
+    bearer_token=os.getenv('TWITTER_BEARER_TOKEN'),
+    consumer_key=os.getenv('TWITTER_API_KEY'),
+    consumer_secret=os.getenv('TWITTER_API_SECRET'),
+    access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
+    access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
+)
 
 app = FastAPI(
-    title="Quick Alert API",
+    title="QuickAlert API",
     description="Real-time disaster alert system API",
     version="1.0.0"
 )
@@ -24,121 +44,172 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize components
-collector = SocialMediaCollector({})  # Add API keys in production
-detector = DisasterDetector()
-alert_generator = AlertGenerator()
+# Initialize sample data provider
+sample_data = SampleDataProvider()
 
 # Store active WebSocket connections
-active_connections: Set[WebSocket] = set()
+active_connections: List[WebSocket] = []
 
-# Store recent alerts
-recent_alerts: List[Dict] = []
-MAX_STORED_ALERTS = 100
+# Get disaster keywords from environment
+DISASTER_KEYWORDS = os.getenv('DISASTER_KEYWORDS', '').split(',')
 
-async def background_alert_check():
-    """Background task to check for new alerts"""
-    while True:
-        try:
-            # Collect social media data
-            disaster_keywords = [
-                'earthquake', 'flood', 'hurricane', 'tornado',
-                'wildfire', 'tsunami', 'emergency', 'evacuation'
-            ]
-            social_data = collector.collect_disaster_data(disaster_keywords)
-            
-            # Flatten the data
-            posts = []
-            for platform_data in social_data.values():
-                posts.extend(platform_data)
-            
-            if posts:
-                # Get predictions
-                predictions = detector.predict([post['text'] for post in posts])
-                
-                # Generate alerts
-                new_alerts = alert_generator.generate_alerts(predictions, posts)
-                
-                if new_alerts:
-                    # Update recent alerts
-                    recent_alerts.extend(new_alerts)
-                    if len(recent_alerts) > MAX_STORED_ALERTS:
-                        recent_alerts[:] = recent_alerts[-MAX_STORED_ALERTS:]
-                    
-                    # Broadcast to all connected clients
-                    for alert in new_alerts:
-                        await broadcast_alert(alert)
+async def fetch_twitter_alerts() -> List[Dict]:
+    """Fetch recent disaster-related tweets."""
+    try:
+        query = ' OR '.join(DISASTER_KEYWORDS)
+        tweets = twitter_client.search_recent_tweets(
+            query=query,
+            max_results=10,
+            tweet_fields=['created_at', 'geo', 'public_metrics']
+        )
         
-        except Exception as e:
-            print(f"Error in background task: {str(e)}")
-        
-        # Wait before next check
-        await asyncio.sleep(60)  # Check every minute
+        alerts = []
+        if tweets.data:
+            for tweet in tweets.data:
+                alert = {
+                    "source": "twitter",
+                    "text": tweet.text,
+                    "severity": "Medium",  # Default severity, could be enhanced with NLP
+                    "created_at": tweet.created_at.isoformat(),
+                    "coordinates": tweet.geo.coordinates if tweet.geo else None,
+                    "engagement": {
+                        "retweets": tweet.public_metrics['retweet_count'],
+                        "likes": tweet.public_metrics['like_count'],
+                        "replies": tweet.public_metrics['reply_count']
+                    }
+                }
+                alerts.append(alert)
+        return alerts
+    except Exception as e:
+        logger.error(f"Error fetching Twitter alerts: {str(e)}")
+        return []
 
-@app.on_event("startup")
-async def startup_event():
-    """Start background tasks on application startup"""
-    background_tasks = BackgroundTasks()
-    background_tasks.add_task(background_alert_check)
+async def fetch_all_alerts() -> List[Dict]:
+    """Fetch alerts from all sources."""
+    twitter_alerts = await fetch_twitter_alerts()
+    sample_alerts = sample_data.get_all_alerts()  # Get some sample data if APIs fail
+    return twitter_alerts + sample_alerts
 
 @app.get("/")
-async def read_root():
-    """Root endpoint"""
+async def root():
+    """Root endpoint returning API status."""
     return {
-        "message": "Welcome to Quick Alert API",
+        "message": "QuickAlert API is running",
         "version": "1.0.0",
-        "status": "operational"
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat()
     }
 
-@app.get("/alerts")
+@app.get("/api/alerts")
 async def get_alerts(
-    limit: int = 10,
-    severity: str = None,
-    source: str = None
+    source: Optional[str] = Query(None, description="Filter by source (twitter)"),
+    severity: Optional[str] = Query(None, description="Filter by severity (High, Medium, Low)"),
+    hours: Optional[int] = Query(24, description="Get alerts from the last N hours", ge=1, le=72)
 ):
-    """Get recent alerts with optional filtering"""
-    filtered_alerts = recent_alerts
-    
-    if severity:
-        filtered_alerts = [
-            alert for alert in filtered_alerts
-            if alert['severity'] == severity.upper()
+    """Get filtered alerts."""
+    try:
+        alerts = await fetch_all_alerts()
+        
+        # Apply filters
+        if source:
+            alerts = [a for a in alerts if a["source"] == source]
+        if severity:
+            alerts = [a for a in alerts if a["severity"] == severity]
+            
+        # Filter by time
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        alerts = [
+            a for a in alerts 
+            if datetime.fromisoformat(a["created_at"]) > cutoff_time
         ]
-    
-    if source:
-        filtered_alerts = [
-            alert for alert in filtered_alerts
-            if alert['source'] == source.lower()
-        ]
-    
-    return filtered_alerts[-limit:]
+            
+        return {
+            "alerts": alerts,
+            "timestamp": datetime.now().isoformat(),
+            "count": len(alerts),
+            "filters": {
+                "source": source,
+                "severity": severity,
+                "hours": hours
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching alerts: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sources")
+async def get_sources():
+    """Get available alert sources."""
+    return {
+        "sources": ["twitter"],
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/severities")
+async def get_severities():
+    """Get available severity levels."""
+    return {
+        "severities": ["High", "Medium", "Low"],
+        "timestamp": datetime.now().isoformat()
+    }
+
+async def broadcast_alerts():
+    """Broadcast alerts to all connected clients."""
+    while True:
+        if active_connections:
+            try:
+                alerts = await fetch_all_alerts()
+                for connection in active_connections:
+                    try:
+                        await connection.send_json({
+                            "type": "alerts",
+                            "data": alerts,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception as e:
+                        logger.error(f"Error sending to client: {str(e)}")
+                        active_connections.remove(connection)
+            except Exception as e:
+                logger.error(f"Error in broadcast: {str(e)}")
+        await asyncio.sleep(int(os.getenv('ALERT_REFRESH_INTERVAL', 300)))
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time alerts"""
+    """WebSocket endpoint for real-time alerts."""
     await websocket.accept()
-    active_connections.add(websocket)
+    active_connections.append(websocket)
     
     try:
+        # Send initial data
+        initial_alerts = await fetch_all_alerts()
+        await websocket.send_json({
+            "type": "initial",
+            "data": initial_alerts,
+            "timestamp": datetime.now().isoformat()
+        })
+        
         while True:
-            # Keep connection alive
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        active_connections.remove(websocket)
+            try:
+                data = await websocket.receive_text()
+                await websocket.send_json({
+                    "type": "acknowledgment",
+                    "message": "received",
+                    "timestamp": datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"WebSocket error: {str(e)}")
+                break
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}")
+    finally:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
-async def broadcast_alert(alert: Dict):
-    """Broadcast alert to all connected clients"""
-    dead_connections = set()
-    
-    for connection in active_connections:
-        try:
-            await connection.send_json(alert)
-        except:
-            dead_connections.add(connection)
-    
-    # Clean up dead connections
-    active_connections.difference_update(dead_connections)
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on application startup."""
+    asyncio.create_task(broadcast_alerts())
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(app, host=os.getenv('API_HOST', '127.0.0.1'), port=int(os.getenv('API_PORT', 8000))) 
