@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - TWITTER_API_KEY=${TWITTER_API_KEY}
+      - FACEBOOK_API_KEY=${FACEBOOK_API_KEY}
+      - INSTAGRAM_API_KEY=${INSTAGRAM_API_KEY}
+    networks:
+      - quick-alert-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - quick-alert-network
+
+networks:
+  quick-alert-network:
+    driver: bridge 
