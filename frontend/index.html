@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickAlert - Disaster Alert System</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>QuickAlert</h1>
+            <p class="subtitle">Real-time Disaster Monitoring</p>
+        </header>
+
+        <main>
+            <div class="dashboard">
+                <div class="map-container">
+                    <div id="map"></div>
+                </div>
+                <div class="alerts-panel">
+                    <div class="alerts-header">
+                        <h2>Active Alerts</h2>
+                        <div class="filters">
+                            <select id="sourceFilter">
+                                <option value="all">All Sources</option>
+                                <option value="weather">Weather Service</option>
+                                <option value="twitter">Twitter</option>
+                                <option value="reddit">Reddit</option>
+                            </select>
+                            <select id="severityFilter">
+                                <option value="all">All Severities</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+                        <div class="alert-stats">
+                            <span id="alertCount">0</span> active alerts
+                        </div>
+                    </div>
+                    <div class="alerts-list" id="alertsList">
+                        <!-- Alerts will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>QuickAlert © 2024 - Minimalistic Disaster Alert System</p>
+        </footer>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html> 

@@ -1,134 +1,103 @@
-# Quick Alert - Disaster Alert System
+# QuickAlert Project
 
-A real-time disaster alert system that leverages social media data and machine learning to detect and notify users about potential disasters.
-
-## Features
-
-- Real-time disaster detection using social media data
-- Machine learning-powered disaster classification
-- Interactive map visualization with alert markers
-- Real-time notifications via WebSocket
-- Minimalist design with earth tone palette
-- Responsive and mobile-friendly interface
-
-## Tech Stack
-
-### Backend
-- Python 3.9+
-- FastAPI
-- TensorFlow/BERT for NLP
-- WebSocket for real-time updates
-- Social media APIs (Twitter, Facebook, Instagram)
-
-### Frontend
-- React.js
-- Styled Components
-- React Map GL
-- Socket.io Client
-- Axios
+A real-time disaster alert system that aggregates and displays emergency information from multiple sources including Twitter, Reddit, and sample data.
 
 ## Project Structure
 
 ```
-quick-alert/
+quickalertproject/
 ├── backend/
-│   ├── app/
-│   │   ├── models/
-│   │   ├── routers/
-│   │   └── services/
-│   ├── tests/
-│   └── main.py
-├── frontend/
-│   ├── public/
-│   └── src/
-│       ├── components/
-│       ├── styles/
-│       └── services/
-└── docs/
+│   ├── main.py           # FastAPI backend server
+│   ├── sample_data.py    # Sample alert data provider
+│   ├── requirements.txt  # Python dependencies
+│   └── .env             # Environment variables
+└── frontend/
+    ├── index.html       # Main HTML file
+    ├── css/
+    │   └── styles.css   # CSS styles
+    └── js/
+        └── app.js       # Frontend JavaScript
 ```
 
-## Getting Started
+## Setup Instructions
 
-### Prerequisites
+1. **Install Python Dependencies**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
 
-- Python 3.9 or higher
-- Node.js 14 or higher
-- Docker and Docker Compose (optional)
+2. **Configure Environment Variables**
+   - Copy the `.env.example` file to `.env` (if not already done)
+   - Update the following variables in `.env`:
+     ```
+     # Twitter API Credentials (if using Twitter integration)
+     TWITTER_API_KEY=your_api_key
+     TWITTER_API_SECRET=your_api_secret
+     TWITTER_ACCESS_TOKEN=your_access_token
+     TWITTER_ACCESS_TOKEN_SECRET=your_token_secret
+     TWITTER_BEARER_TOKEN=your_bearer_token
 
-### Installation
+     # Reddit API Credentials (if using Reddit integration)
+     REDDIT_CLIENT_ID=your_client_id
+     REDDIT_CLIENT_SECRET=your_client_secret
+     REDDIT_USER_AGENT=your_user_agent
+     ```
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/quick-alert.git
-cd quick-alert
-```
+## Running the Application
 
-2. Set up the backend:
+1. **Start the Backend Server**
+   ```bash
+   cd backend
+   python -m uvicorn main:app --reload
+   ```
+   The backend will run on http://127.0.0.1:8000
+
+2. **Start the Frontend Server**
+   In a new terminal:
+   ```bash
+   cd frontend
+   python -m http.server 8080
+   ```
+   Access the frontend at http://localhost:8080
+
+## Features
+
+- Real-time disaster alerts from multiple sources
+- Interactive map display of alert locations
+- Filtering by source and severity
+- WebSocket connection for live updates
+- Scrollable alerts panel with detailed information
+
+## API Endpoints
+
+- `GET /api/alerts` - Get all alerts with optional filters
+  - Query parameters:
+    - `source`: Filter by source (twitter, reddit)
+    - `severity`: Filter by severity (High, Medium, Low)
+    - `hours`: Get alerts from the last N hours (1-72)
+
+- `GET /api/sources` - Get available alert sources
+- `GET /api/severities` - Get available severity levels
+- `WebSocket /ws` - Real-time alert updates
+
+## Troubleshooting
+
+If you encounter the "ModuleNotFoundError: No module named 'fastapi'" error:
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+python -m pip install --no-cache-dir fastapi uvicorn
 ```
 
-3. Set up the frontend:
-```bash
-cd frontend
-npm install
-```
+## Maintenance
 
-4. Create a .env file in the root directory with your API keys:
-```
-TWITTER_API_KEY=your_twitter_api_key
-FACEBOOK_API_KEY=your_facebook_api_key
-INSTAGRAM_API_KEY=your_instagram_api_key
-```
+- Keep dependencies updated using `pip install -r requirements.txt`
+- Monitor the `alerts.log` file for any errors
+- Check API rate limits for Twitter and Reddit integrations
+- Update disaster keywords in `.env` as needed
 
-### Running the Application
+## Security Notes
 
-#### Without Docker
-
-1. Start the backend:
-```bash
-cd backend
-uvicorn main:app --reload
-```
-
-2. Start the frontend:
-```bash
-cd frontend
-npm start
-```
-
-#### With Docker
-
-```bash
-docker-compose up
-```
-
-The application will be available at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/docs
-
-## Color Palette
-
-- Primary: #8B7355 (Light brown)
-- Secondary: #556B2F (Olive green)
-- Tertiary: #CD853F (Peru/tan)
-- Background: #F5F5DC (Beige)
-- Text: #3E2723 (Dark brown)
-- Alert: #B22222 (Fire brick red)
-- Success: #2E8B57 (Sea green)
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details. 
+- Never commit the `.env` file with real API credentials
+- Keep API keys and tokens secure
+- Use appropriate rate limiting for production deployments 
